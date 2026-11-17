@@ -1,0 +1,3 @@
+# Test dependencies: install inside a Python virtual environment.
+# Pyxrun is pinned to the proposed revision until an upstream release provides it.
+test_support @ git+ssh://git@github.com/xross-work/test_support.git@bb5cfa350e556a3d3e9b61b359862c31072d9a94
