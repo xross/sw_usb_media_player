@@ -12,6 +12,84 @@ paces video against the audio clock by default; synchronisation remains
 experimental. Successful plays drain outstanding display work before reopening
 the file. File and decoder errors stop playback after pending valid work drains.
 
+Hardware requirements
+---------------------
+
+The demonstrated setup uses the following hardware. The product links identify
+the example parts; check the connector, controller and voltage of any substitute.
+No Raspberry Pi is needed: the GPIO accessories are used with the XU316 board.
+
+.. list-table:: Demo hardware checklist
+   :header-rows: 1
+
+   * - Item
+     - Requirement
+     - Notes
+   * - XK-EVK-XU316 with AIV carrier
+     - Required
+     - Use the J3 expansion header and the AIV target supplied with the player.
+   * - XTAG adapter, host computer and USB cables
+     - Required for loading and the documented xSCOPE runs
+     - Include a USB data cable for the adapter and the board's power connection.
+   * - USB memory stick
+     - Required
+     - High-speed mass storage, FAT filesystem and 512-byte logical blocks;
+       copy the selected files from ``media/`` to the root directory.
+   * - Powered USB OTG/data adapter or splitter and a 5-V supply
+     - Required in this setup
+     - The board does not provide VBUS to power the memory stick. The
+       `BRITECO splitter <https://www.amazon.co.uk/dp/B0D9LZQCQP>`_ is an
+       example; match its connectors and power routing to the board.
+   * - 240 x 320 SPI LCD
+     - Required
+     - ILI9341 or ST7789V, used in 320 x 240 landscape. The tested part is the
+       `Waveshare 2.4-inch LCD module
+       <https://thepihut.com/products/2-4-lcd-display-module-240x320>`_, which
+       uses ILI9341 and includes an 8-pin connection cable.
+   * - Pin headers and jumper wires
+     - Required where the board headers are not populated
+     - Solder suitable headers to the board's expansion footprints, including
+       J3 for the DAC SHIM. Use the LCD connection table below, not Raspberry Pi
+       GPIO names, to wire the screen.
+   * - Pimoroni Audio DAC SHIM (Line-Out), PIM542
+     - Required only for audible output
+     - `PCM5100A I2S DAC SHIM
+       <https://thepihut.com/products/audio-dac-shim-line-out>`_, fitted to J3;
+       use a 3.5-mm stereo cable and powered speakers or an amplifier.
+   * - GPIO edge extension
+     - Optional
+     - The `52Pi GPIO Edge Extension
+       <https://thepihut.com/products/gpio-edge-extension-for-raspberry-pi>`_
+       provides easier access around a fitted DAC SHIM. It duplicates existing
+       electrical connections; it does not add independent GPIO signals.
+
+Power and assembly
+~~~~~~~~~~~~~~~~~~
+
+The USB data connection must reach the board while the splitter's auxiliary
+power input supplies the memory stick's VBUS. Power the board according to its
+own instructions; do not assume that the XTAG connection also powers the stick.
+A charge-only cable cannot carry the USB data, and a passive adapter without an
+external supply cannot make the board source VBUS. This player does not control
+a VBUS power-switch GPIO. Check the cable's power routing before connecting it,
+and do not connect competing 5-V sources or back-feed a host computer. Use a
+power-injection adapter, not a USB hub: hubs are not supported by ``lib_xuh``.
+
+Power off before soldering headers or fitting accessories. Check pin 1 and header
+orientation, common grounds and clearance between boards. The LCD must use
+3.3-V-compatible logic: the Waveshare documentation says its logic level follows
+its supply, so use its 3.3-V connection for the XU316 rather than assuming a
+5-V-powered module has safe logic levels. See the
+`Waveshare module documentation <https://www.waveshare.com/wiki/2.4inch_LCD_Module>`_.
+
+Select the actual LCD controller with
+``-DAPP_XUH_MSC_PLAYER_LCD_CONTROLLER=ILI9341`` (default) or ``ST7789V``. The
+controller is not auto-detected. Only the ILI9341 module has been validated at
+the demo's 50-MHz SPI setting; do not assume an arbitrary ST7789V module supports
+that speed. The DAC SHIM is a line-level output, not a passive-speaker driver.
+For a video-only demo, omit it and use ``jpeg`` or ``mpeg1``. To run
+``mpeg1_audio`` without a DAC, set ``-DAPP_XUH_MSC_PLAYER_AUDIO_DAC=OFF``.
+
 Build and run
 -------------
 
@@ -50,11 +128,34 @@ timing-sensitive USB task. Running these images loads RAM only; it does not
 program flash or modify the USB stick.
 
 The player requires an XK-EVK-XU316 target and defaults to the AIV carrier
-configuration. VBUS is assumed to be hardwired; there is no board USB-switch GPIO
-task. ``lib_xuh`` itself can support other device families.
+configuration. Supply the memory stick's VBUS externally as described above;
+there is no board USB-switch GPIO task. ``lib_xuh`` itself can support other
+device families.
 
 Dependencies are declared in ``deps.cmake``. XCommon fetches missing
 repositories but does not update existing sibling checkouts.
+
+Clean sandbox build
+~~~~~~~~~~~~~~~~~~~
+
+Use XTC Tools 15.3.1 in an activated shell, Git with access to the GitHub
+repositories in ``deps.cmake``, CMake 3.21 or newer and network access. Some
+dependency URLs use SSH, so configure your GitHub SSH access before configuring.
+Start in a new empty directory, not beside an existing set of library checkouts::
+
+    mkdir usb-player-sandbox
+    cd usb-player-sandbox
+    git clone --branch develop https://github.com/xross/sw_usb_media_player.git
+    cd sw_usb_media_player
+    cmake -G "Unix Makefiles" -S app_usb_media_player -B build \
+      -DFULL_MANIFEST=TRUE
+    xmake -C build -j 8 jpeg mpeg1 mpeg1_audio
+
+XCommon downloads missing libraries into the sandbox beside this repository.
+The generated ``build/manifest.txt`` records their actual commits. Retain it
+with build logs when reporting problems; existing checkouts are not automatically
+reset to the versions in ``deps.cmake``. A fresh build directory alone does not
+isolate dependencies if its application is still inside a shared sandbox.
 
 Configuration
 -------------
