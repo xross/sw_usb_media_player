@@ -58,8 +58,11 @@ int audio_pipeline_send(chanend channel, const unsigned char *data, unsigned byt
  * the audio played so far, in reference-timer ticks, is get_reference_time()
  * less *offset on the sender's tile. Once started it remains valid through
  * underflows. After audio_pipeline_go() it is the clock the go asks for, until
- * an acknowledgement confirms the start. Returns 0 when unpaced, before
- * startup, or on failure. */
+ * an acknowledgement confirms the start. Returns AUDIO_CLOCK_RUNNING with a
+ * clock; AUDIO_CLOCK_UNPACED when pacing is switched off at run time, so video
+ * should not wait for audio; otherwise AUDIO_CLOCK_NONE (before startup, on
+ * failure, or in an unpaced build). */
+enum { AUDIO_CLOCK_NONE, AUDIO_CLOCK_RUNNING, AUDIO_CLOCK_UNPACED };
 int audio_pipeline_clock(unsigned *offset);
 /* End input and drain buffered audio at its sample rate before returning.
  * Underflow counters exclude startup and the tail beyond normal audio EOF. */

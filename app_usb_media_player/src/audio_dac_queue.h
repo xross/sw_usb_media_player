@@ -17,6 +17,9 @@ void audio_dac_release(void);
 /* Queue as much of the PCM as fits and return the frames taken. Frames whose
  * time has already passed are taken and dropped. Zero means the queue is full. */
 unsigned audio_dac_write(const int32_t *samples, unsigned frames);
+/* As audio_dac_write(), but after a gap the frames play from now instead of
+ * being dropped as late: for audio that is not kept to the clock. */
+unsigned audio_dac_write_now(const int32_t *samples, unsigned frames);
 /* No more PCM in this play: wait until the queued PCM has been played. */
 void audio_dac_finish(void);
 void audio_dac_status(unsigned status[DAC_STATUS_WORDS]);

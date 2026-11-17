@@ -56,4 +56,11 @@
 #if APP_XUH_MSC_PLAYER_AUDIO_WAIT_BYTES && APP_XUH_MSC_PLAYER_AUDIO_WAIT_BYTES < 1024
 #error APP_XUH_MSC_PLAYER_AUDIO_WAIT_BYTES must be 0 or at least 1024
 #endif
+
+/* With DAC output, holding the board's SW1 button (X1D23, port 1H on tile 1)
+ * switches pacing off until it is released: the video decoder runs flat out
+ * and the audio plays faster to keep up. 0 leaves the button unused. */
+#ifndef APP_XUH_MSC_PLAYER_PACING_BUTTON
+#define APP_XUH_MSC_PLAYER_PACING_BUTTON 1
+#endif
 #endif

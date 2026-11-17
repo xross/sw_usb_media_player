@@ -64,6 +64,15 @@ int main(void)
     audio_pcm_finish(&q);
     assert(pop() == 0 && q.drained && !q.started);
 
+    /* After a gap, push_now plays from the output position; push would drop
+     * the frames whose time has passed. */
+    audio_pcm_reset(&q, 0);
+    assert(push(0, AUDIO_PCM_PREFILL) == AUDIO_PCM_PREFILL);
+    for (unsigned i = 0; i < AUDIO_PCM_PREFILL + 20; ++i) pop();
+    assert(q.played == AUDIO_PCM_PREFILL + 20);
+    assert(audio_pcm_push_now(&q, media[600], 4) == 4);
+    assert(q.delivered == q.played + 4 && pop() == 601);
+
     /* A held start waits beyond the prefill for its release. */
     audio_pcm_reset(&q, 1);
     assert(push(0, AUDIO_PCM_PREFILL) == AUDIO_PCM_PREFILL);

@@ -107,10 +107,13 @@ static void publish_audio_timing(void)
         audio_pipeline_go(mpeg_audio_channel);
         audio_go_sent = 1;
     }
-    if (have_start && audio_pipeline_clock(&offset))
-        mpeg_pipeline_audio_clock(offset - (unsigned)audio_start_ms * 100000u, 1);
+    int clock = audio_pipeline_clock(&offset);
+    if (clock == AUDIO_CLOCK_UNPACED)
+        mpeg_pipeline_audio_clock(0, MPEG_CLOCK_UNPACED);
+    else if (have_start && clock == AUDIO_CLOCK_RUNNING)
+        mpeg_pipeline_audio_clock(offset - (unsigned)audio_start_ms * 100000u, MPEG_CLOCK_VALID);
     else
-        mpeg_pipeline_audio_clock(0, 0);
+        mpeg_pipeline_audio_clock(0, MPEG_CLOCK_NONE);
 }
 
 PS_AUDIO_CALLBACK static int mpeg_ps_audio_send(void *context,
@@ -137,7 +140,7 @@ VIDEO_SOURCE_OPEN static int mpeg_source_open(void *context)
     memset(audio_stats, 0, sizeof(audio_stats));
     if (!rc) {
         mpeg_ps_init(&mpeg_ps, mpeg_ps_disk_read, &mpeg_file);
-        mpeg_pipeline_audio_clock(0, 0);
+        mpeg_pipeline_audio_clock(0, MPEG_CLOCK_NONE);
         audio_offset_sent = audio_go_sent = 0;
         /* Paced audio starts with the first picture. */
         unsigned mode = APP_XUH_MSC_PLAYER_AUDIO_DECODE |

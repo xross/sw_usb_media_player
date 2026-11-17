@@ -27,6 +27,10 @@ void audio_pcm_release(audio_pcm_t *q);
 /* Producer: consume up to count consecutive media frames, returning how many.
  * Late prefixes are discarded, never replayed. Zero means backpressure. */
 unsigned audio_pcm_push(audio_pcm_t *q, const int32_t *samples, unsigned count);
+/* Producer: as audio_pcm_push(), except that if output has already run past
+ * the queued audio, the frames resume from the output position instead of
+ * being discarded as late. For audio that is not kept to the clock. */
+unsigned audio_pcm_push_now(audio_pcm_t *q, const int32_t *samples, unsigned count);
 /* Producer: no more media; drain known media, but keep the clock advancing
  * through silence so that video can finish. Provisional tail gaps don't count. */
 void audio_pcm_finish(audio_pcm_t *q);

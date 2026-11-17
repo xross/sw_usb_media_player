@@ -4,7 +4,8 @@
 #include <stdio.h>
 enum { VALID = 0x80000000u, TIME_MASK = 0x7fffffffu,
        GLYPH_WIDTH = 5, GLYPH_HEIGHT = 7, CELL = 6, TEXT_LENGTH = 12,
-        SPACE = 10, D, E, C, PLUS, MINUS, GREATER, M, S, U, H, COLON,
+        SPACE = 10, D, E, C, PLUS, MINUS, GREATER, M, S, U, COLON, A, N, V, SLASH,
+        L, O, K, F, R, I, G,
        TEXT_X = (DECODE_LEAD_WIDTH - TEXT_LENGTH * CELL) / 2,
        BAR_X = 5, BAR_HALF = 45, CENTRE = BAR_X + BAR_HALF,
        /* With the footer, the bar moves up three rows to make room for it. */
@@ -17,7 +18,7 @@ enum { VALID = 0x80000000u, TIME_MASK = 0x7fffffffu,
 /* Same single-word, tile-local publication as the stereo peak meter. No
  * multiword snapshot, retry loop, channel traffic or waiting in either task. */
 static volatile unsigned published;
-static volatile unsigned published_underflows, published_held_ms;
+static volatile unsigned published_underflows, published_paced = 1;
 
 /* LCD task only: the leads drawn since the last report. */
 static struct { long long sum; int least, greatest; unsigned count, green, amber, red; } summary;
@@ -52,8 +53,18 @@ static const unsigned char glyphs[][GLYPH_HEIGHT] = {
     {0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11}, /* M */
     {0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e}, /* S */
     {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e}, /* U */
-    {0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}, /* H */
     {0, 0x04, 0x04, 0, 0x04, 0x04, 0},         /* : */
+    {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}, /* A */
+    {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}, /* N */
+    {0x11, 0x11, 0x11, 0x11, 0x11, 0x0a, 0x04}, /* V */
+    {0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10}, /* / */
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1f}, /* L */
+    {0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e}, /* O */
+    {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}, /* K */
+    {0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x10}, /* F */
+    {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}, /* R */
+    {0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e}, /* I */
+    {0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f}, /* G */
 };
 
 void decode_lead_advance(decode_lead_clock_t *state, unsigned units, unsigned rate)
@@ -77,17 +88,10 @@ unsigned decode_lead_read(unsigned *ms)
     return (snapshot & VALID) != 0;
 }
 
-void decode_lead_underflows_publish(unsigned count, unsigned held_ms)
-{
-    published_held_ms = held_ms;
-    published_underflows = count;
-}
-
-void decode_lead_underflows_read(unsigned *count, unsigned *held_ms)
-{
-    *count = published_underflows;
-    *held_ms = published_held_ms;
-}
+void decode_lead_underflows_publish(unsigned count) { published_underflows = count; }
+unsigned decode_lead_underflows_read(void) { return published_underflows; }
+void decode_lead_pacing_publish(unsigned paced) { published_paced = paced; }
+unsigned decode_lead_pacing_read(void) { return published_paced; }
 
 int decode_lead_difference(unsigned audio_ms, unsigned video_ms)
 {
@@ -111,18 +115,23 @@ void decode_lead_draw(unsigned char *pixels, unsigned video_ms)
 {
     unsigned audio_ms;
     unsigned valid = decode_lead_read(&audio_ms);
+    /* Unpaced, the reading shows how far apart the audio played and the
+     * picture are, but is not a sync measurement. */
+    unsigned paced = decode_lead_pacing_read();
     int delta = decode_lead_difference(audio_ms, video_ms);
     unsigned magnitude = delta < 0 ? (unsigned)-delta : (unsigned)delta;
     unsigned number = magnitude > 9999 ? 9999 : magnitude;
+    /* Paced builds show sync (A/V); unpaced builds show decode lead (DEC). */
     unsigned char text[TEXT_LENGTH] = {
-        D, E, C, SPACE, delta < 0 ? MINUS : PLUS, magnitude > 9999 ? GREATER : SPACE,
+        APP_XUH_MSC_PLAYER_AUDIO_PACED ? A : D, APP_XUH_MSC_PLAYER_AUDIO_PACED ? SLASH : E,
+        APP_XUH_MSC_PLAYER_AUDIO_PACED ? V : C, SPACE, delta < 0 ? MINUS : PLUS, magnitude > 9999 ? GREATER : SPACE,
         number >= 1000 ? number / 1000 : SPACE,
         number >= 100 ? number / 100 % 10 : SPACE,
         number >= 10 ? number / 10 % 10 : SPACE, number % 10, M, S };
     if (!valid) {
         text[4] = text[5] = SPACE;
         text[6] = text[7] = text[8] = text[9] = MINUS;
-    } else {
+    } else if (paced) {
         if (!summary.count || delta < summary.least) summary.least = delta;
         if (!summary.count || delta > summary.greatest) summary.greatest = delta;
         summary.sum += delta;
@@ -165,26 +174,39 @@ void decode_lead_draw(unsigned char *pixels, unsigned video_ms)
         fill(pixels, CENTRE, BAR_Y - 2, 1, 6, LABEL);
         /* The largest recent reading, in its band's colour, under the live tick. */
         unsigned held = peak.value < 0 ? (unsigned)-peak.value : (unsigned)peak.value;
-        fill(pixels, bar_position(peak.value), BAR_Y - 2, 1, 6, band_color(held));
+        if (paced && peak.valid) fill(pixels, bar_position(peak.value), BAR_Y - 2, 1, 6, band_color(held));
         fill(pixels, position, BAR_Y - 2, 1, 6, 0xffff);
     }
 #if APP_XUH_MSC_PLAYER_AUDIO_PACED
-    /* Fifteen cells fit inside the 100-pixel rectangle. Overflow is explicit,
-     * while terminal reports retain the full values: U:003 H:00120MS. */
-    unsigned underflows, held_ms;
-    decode_lead_underflows_read(&underflows, &held_ms);
+    /* A/V LOCKED, then any underflows (U:003), or FREE-RUNNING while SW1 switches
+     * pacing off, when underflows are not counted. Centred; sixteen cells just
+     * fit inside the 100-pixel rectangle, and terminal reports keep the full
+     * count. */
+    static const unsigned char locked[] = {A, SLASH, V, SPACE, L, O, C, K, E, D};
+    static const unsigned char free_running[] = {F, R, E, E, MINUS, R, U, N, N, I, N, G};
+    unsigned underflows = decode_lead_underflows_read();
     unsigned count = underflows > 999 ? 999 : underflows;
-    unsigned held = held_ms > 99999 ? 99999 : held_ms;
-    unsigned char footer[] = {U, underflows > 999 ? GREATER : COLON,
-        count / 100, count / 10 % 10, count % 10, SPACE,
-        H, held_ms > 99999 ? GREATER : COLON,
-        held / 10000, held / 1000 % 10, held / 100 % 10, held / 10 % 10, held % 10, M, S};
-    for (unsigned character = 0; character < sizeof(footer); ++character)
+    unsigned char footer[16];
+    unsigned length = 0;
+    const unsigned char *word = paced ? locked : free_running;
+    unsigned word_length = paced ? sizeof(locked) : sizeof(free_running);
+    for (unsigned i = 0; i < word_length; ++i) footer[length++] = word[i];
+    unsigned split = length;
+    if (underflows && paced) {
+        footer[length++] = SPACE;
+        footer[length++] = U;
+        footer[length++] = underflows > 999 ? GREATER : COLON;
+        footer[length++] = count / 100;
+        footer[length++] = count / 10 % 10;
+        footer[length++] = count % 10;
+    }
+    unsigned footer_x = (DECODE_LEAD_WIDTH - (length * CELL - 1)) / 2;
+    for (unsigned character = 0; character < length; ++character)
         for (unsigned y = 0; y < GLYPH_HEIGHT; ++y)
             for (unsigned x = 0; x < GLYPH_WIDTH; ++x)
                 if ((glyphs[footer[character]][y] >> (GLYPH_WIDTH - 1 - x)) & 1)
-                    fill(pixels, 5 + character * CELL + x, FOOTER_Y + y, 1, 1,
-                         underflows ? AMBER : LABEL);
+                    fill(pixels, footer_x + character * CELL + x, FOOTER_Y + y, 1, 1,
+                         character >= split || !paced ? AMBER : LABEL);
 #endif
 }
 

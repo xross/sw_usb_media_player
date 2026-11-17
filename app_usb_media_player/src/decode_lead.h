@@ -52,11 +52,14 @@ void decode_lead_advance(decode_lead_clock_t *state, unsigned units, unsigned ra
 void decode_lead_publish(unsigned ms, unsigned valid);
 unsigned decode_lead_read(unsigned *ms);
 
-/* Audio task publishes confirmed underflow episodes and missing-audio ms
- * (DAC silence or stand-in hold; the historical parameter name is retained).
- * Two independent tile-local words: approximate display, never clock control. */
-void decode_lead_underflows_publish(unsigned count, unsigned held_ms);
-void decode_lead_underflows_read(unsigned *count, unsigned *held_ms);
+/* Audio task publishes confirmed underflow episodes, and whether playback is
+ * paced (1) or switched to run flat out (0). Independent tile-local words for
+ * display only, never clock control. Unpaced, the audio position is still
+ * published, but those readings are left out of the end-of-play summary. */
+void decode_lead_underflows_publish(unsigned count);
+unsigned decode_lead_underflows_read(void);
+void decode_lead_pacing_publish(unsigned paced);
+unsigned decode_lead_pacing_read(void);
 
 /* Signed difference modulo 2^31 ms; unambiguous within +/- 12.4 days. */
 int decode_lead_difference(unsigned audio_ms, unsigned video_ms);

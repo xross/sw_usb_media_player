@@ -11,10 +11,11 @@ void audio_pcm_reset(audio_pcm_t *q, unsigned hold)
     barrier();
 }
 
-unsigned audio_pcm_push(audio_pcm_t *q, const int32_t *samples, unsigned count)
+static unsigned push(audio_pcm_t *q, const int32_t *samples, unsigned count, unsigned now)
 {
     unsigned start = q->delivered, played = q->played;
     barrier(); /* Acquire the consumer's released slots. */
+    if (now && (int)(played - start) > 0) start = played;
     int late = (int)(played - start);
     unsigned skip = late > 0 ? (unsigned)late : 0;
     if (skip > count) skip = count;
@@ -29,6 +30,16 @@ unsigned audio_pcm_push(audio_pcm_t *q, const int32_t *samples, unsigned count)
     barrier(); /* Publish complete pairs only. */
     q->delivered = start + skip + copy;
     return skip + copy;
+}
+
+unsigned audio_pcm_push(audio_pcm_t *q, const int32_t *samples, unsigned count)
+{
+    return push(q, samples, count, 0);
+}
+
+unsigned audio_pcm_push_now(audio_pcm_t *q, const int32_t *samples, unsigned count)
+{
+    return push(q, samples, count, 1);
 }
 
 void audio_pcm_release(audio_pcm_t *q)

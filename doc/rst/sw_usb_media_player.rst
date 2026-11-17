@@ -319,8 +319,9 @@ the level of the audio most recently decoded by the timed audio task.
 With S32 PCM the peak scan and logarithmic meter scale use integer arithmetic;
 there is no per-sample conversion to float.
 
-Between the two meters, the ``DEC`` gauge occupies (110, 4) through (209, 29),
-ending on the row above a 180-row picture.
+Between the two meters, the gauge occupies (110, 4) through (209, 29), ending on
+the row above a 180-row picture. It is labelled ``A/V`` in a paced build and
+``DEC`` (decode lead) in an unpaced build.
 In a paced build it shows how far the audio is ahead of the picture: the audio
 played, less the start time of the picture whose transfer to the LCD has just
 finished, both on the stream's timeline. Zero means the picture reached the
@@ -335,11 +336,11 @@ The bar clamps at its ends; the signed numeric reading continues to 9999 ms,
 with ``>`` marking larger magnitudes. A second tick, in its band's colour, stays
 at the largest reading of the last 50 pictures. The end-of-play summary counts
 the readings in each band.
-Its third line shows ``U:003 H:00120MS``: cumulative confirmed underflow episodes
-and missing-audio duration. During that duration the DAC outputs silence; the
-stand-in models holding the last stereo sample pair. The ``H`` label
-is shared by both paths. ``>`` replaces ``:`` when a value
-exceeds the display's three/five digits; terminal reports retain full values.
+Its third line shows ``A/V LOCKED`` while the video is paced to the audio, or
+``FREE-RUNNING`` in amber while SW1 switches pacing off. Once there have been
+underflows, ``A/V LOCKED`` is followed by their count in amber, for example
+``U:003``, with ``>`` for more than 999; the end-of-play report gives the full
+figures, including the missing-audio duration.
 Unpaced builds retain the original 100 x 22 rectangle, without the footer or its
 extra SPI transfer, for maximum-throughput comparisons.
 
@@ -438,6 +439,32 @@ that arrives after its time is dropped. The underflow count, the missing
 duration and strict mode work as for the stand-in. At the end of a play the
 queued audio is played out before the statistics are returned, and the summary
 line reads ``MP2 I2S output``.
+
+Pacing on and off
+^^^^^^^^^^^^^^^^^
+
+Holding down the board's SW1 button (``X1D23``, port 1H on tile 1) switches
+pacing off while a clip plays; releasing it switches pacing back on. The MP2
+task watches the button. With pacing off, the video decoder runs flat out:
+about 40 FPS on the reference clip. The audio then arrives faster than it can be
+played, so it is played faster, like fast-forward: frames are dropped evenly, in
+proportion to how fast the audio has arrived over the last quarter of a second,
+which raises the pitch. The rate is set a
+little slow, so that when the audio arrives in bursts the player more often
+cuts a block short than runs out and goes briefly silent. Nothing filters the
+audio first, so some high-frequency distortion is expected. Underflows are not
+counted while unpaced. The gauge reads ``FREE-RUNNING`` and its number shows how far
+the audio being played is behind the picture, which is about how long the
+picture will hold when pacing comes back on; those readings are left out of the
+end-of-play summary. With pacing on again, the audio output waits, as at the
+start of a play, until its input has filled again, so that it does not run dry;
+meanwhile the video keeps running. The DAC then restarts with the next
+decoded block and the video waits for it. The file carries video ahead of its
+audio, so the picture holds for up to about 0.6 s until the audio reaches it.
+A play that starts with the button held starts unpaced.
+``APP_XUH_MSC_PLAYER_PACING_BUTTON``
+in ``src/video_config.h`` is 1 by default; 0 leaves the button unused. The
+stand-in has no switch.
 
 While waiting for a picture deadline, the decoder accepts video without blocking
 on the next storage read. The player's ``src/video_config.h`` sets

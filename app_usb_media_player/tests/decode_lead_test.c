@@ -6,7 +6,7 @@
 #if DECODE_LEAD_ENABLED
 static unsigned char storage[DECODE_LEAD_WIDTH * DECODE_LEAD_HEIGHT * 2 + 32];
 #define PIXELS (storage + 16)
-enum { TRACK = 0x18c3, WHITE = 0xffff, LABEL = 0xd6ba,
+enum { TRACK = 0x18c3, WHITE = 0xffff, LABEL = 0xd6ba, AMBER = (26u << 11) | (39u << 5) | 7u,
        CENTRE = 50, BAR_LEFT = 5, BAR_RIGHT = 95, TEXT_X = 14,
        BAR_Y = APP_XUH_MSC_PLAYER_AUDIO_PACED ? 12 : 15, FOOTER_Y = 17 };
 
@@ -55,13 +55,14 @@ static void check_publication(void)
     unsigned ms;
     decode_lead_publish(0, 0);
     assert(!decode_lead_read(&ms));
-    unsigned count, held_ms;
-    decode_lead_underflows_publish(3, 120);
-    decode_lead_underflows_read(&count, &held_ms);
-    assert(count == 3 && held_ms == 120);
-    decode_lead_underflows_publish(0, 0);
-    decode_lead_underflows_read(&count, &held_ms);
-    assert(count == 0 && held_ms == 0);
+    decode_lead_underflows_publish(3);
+    assert(decode_lead_underflows_read() == 3);
+    decode_lead_underflows_publish(0);
+    assert(decode_lead_underflows_read() == 0);
+    assert(decode_lead_pacing_read());
+    decode_lead_pacing_publish(0);
+    assert(!decode_lead_pacing_read());
+    decode_lead_pacing_publish(1);
     decode_lead_publish(0, 1);
     assert(decode_lead_read(&ms) && ms == 0); /* Valid zero is not unavailable. */
     decode_lead_publish(72, 1);
@@ -128,15 +129,29 @@ static void check_drawing(void)
     assert(DECODE_LEAD_HEIGHT == 26);
     /* The gauge must end above a 180-row picture centred on 240 rows. */
     assert(DECODE_LEAD_Y + DECODE_LEAD_HEIGHT <= (240 - 180) / 2);
-    decode_lead_underflows_publish(3, 120);
+    /* Footer, centred: A/V LOCKED, then U:003 in amber only when there are
+     * underflows. A line of n cells starts at (100 - (6n - 1)) / 2. */
+    decode_lead_underflows_publish(0);
     decode_lead_draw(PIXELS, 0);
-    /* U and H have outer strokes; normal colon has a central stroke. */
-    assert(pixel(5, FOOTER_Y) != 0x0841);
-    assert(pixel(5 + 6 * 6, FOOTER_Y) != 0x0841);
-    decode_lead_underflows_publish(1000, 100000);
+    assert(pixel(21, FOOTER_Y) == LABEL);                  /* A of A/V LOCKED */
+    assert(pixel(19, FOOTER_Y) == 0x0841 && pixel(80, FOOTER_Y) == 0x0841);
+    decode_lead_underflows_publish(3);
     decode_lead_draw(PIXELS, 0);
-    assert(pixel(5 + 6, FOOTER_Y) == (unsigned)((26u << 11) | (39u << 5) | 7u));
-    assert(pixel(5 + 7 * 6, FOOTER_Y) == (unsigned)((26u << 11) | (39u << 5) | 7u));
+    assert(pixel(2 + 11 * 6, FOOTER_Y) == AMBER);          /* U of U:003 */
+    decode_lead_underflows_publish(1000);
+    decode_lead_draw(PIXELS, 0);
+    assert(pixel(2 + 12 * 6, FOOTER_Y) == AMBER);          /* > overflow */
+    /* FREE-RUNNING in amber, without the underflow count, which is not kept
+     * then; its readings stay out of the summary. */
+    decode_lead_underflows_publish(3);
+    decode_lead_pacing_publish(0);
+    decode_lead_report();
+    decode_lead_publish(500, 1);
+    decode_lead_draw(PIXELS, 0);
+    assert(pixel(14, FOOTER_Y) == AMBER);                  /* F of FREE-RUNNING */
+    assert(pixel(13, FOOTER_Y) == 0x0841 && pixel(86, FOOTER_Y) == 0x0841);
+    decode_lead_underflows_publish(0);
+    decode_lead_pacing_publish(1);
 #else
     assert(DECODE_LEAD_HEIGHT == 22);
 #endif

@@ -46,6 +46,11 @@ unsigned audio_dac_write(const int32_t *samples, unsigned frames)
     return audio_pcm_push(&pcm, samples, frames);
 }
 
+unsigned audio_dac_write_now(const int32_t *samples, unsigned frames)
+{
+    return audio_pcm_push_now(&pcm, samples, frames);
+}
+
 void audio_dac_finish(void)
 {
     audio_pcm_finish(&pcm);

@@ -245,7 +245,13 @@ static mpeg_result_t hold_picture(chanend c_load, input_t *in, unsigned pictures
     unsigned first = 1;
     for (;;) {
         int early;
-        if (audio_clock_valid) {
+        unsigned clock = audio_clock_valid;
+        if (clock == MPEG_CLOCK_UNPACED) {
+            /* Pacing is switched off: decode flat out. */
+            in->clock_seen = 1;
+            return MPEG_NEED_INPUT;
+        }
+        if (clock == MPEG_CLOCK_VALID) {
             unsigned played = get_reference_time() - audio_clock_offset;
             early = (int)(picture - DISPLAY_LATENCY_TICKS - played);
             in->clock_seen = 1;
