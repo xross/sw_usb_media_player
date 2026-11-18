@@ -28,8 +28,10 @@ enum {
     PIPELINE_ERRORS,
     PIPELINE_STATS_WORDS
 };
-/* Common statistics plus decoder-specific words (see mpeg_pipeline.h). */
-#define PIPELINE_LOADER_STATS_WORDS (PIPELINE_STATS_WORDS + 8)
+/* Fixed protocol extension; mpeg_pipeline.h checks its enum against this size.
+ * These counts are compile-time constants for packet/array sizes. */
+enum { PIPELINE_DECODER_STATS_WORDS = 8,
+       PIPELINE_LOADER_STATS_WORDS = PIPELINE_STATS_WORDS + PIPELINE_DECODER_STATS_WORDS };
 
 #if MSC_VIDEO_PIPELINE && !defined(__XC__)
 #include <xs1.h>

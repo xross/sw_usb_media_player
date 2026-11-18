@@ -46,12 +46,11 @@ static void report_frame_timing(const char *name, const frame_timing_t *timing)
 #else
 #define MPEG_PACED 0
 #endif
-enum { TICKS_PER_MS = 100000,
-       /* From a decoded picture being released to the end of its write to the display. */
-       DISPLAY_LATENCY_TICKS = APP_XUH_MSC_PLAYER_DISPLAY_LATENCY_MS * TICKS_PER_MS,
-       PACE_POLL_TICKS = 2 * TICKS_PER_MS,
-       /* How long pictures after the first wait for the audio clock to start. */
-       CLOCK_WAIT_TICKS = 600 * TICKS_PER_MS };
+/* From a decoded picture being released to the end of its display write. */
+static const unsigned display_latency_ticks = APP_XUH_MSC_PLAYER_DISPLAY_LATENCY_MS * REFERENCE_TICKS_PER_MS;
+static const unsigned pace_poll_ticks = 2 * REFERENCE_TICKS_PER_MS;
+static const unsigned clock_start_timeout_ticks = 600 * REFERENCE_TICKS_PER_MS;
+static const unsigned late_picture_ticks = 10 * REFERENCE_TICKS_PER_MS;
 
 /* One loader writer and one decoder reader on the same tile. Clock validity
  * is separate from the offset: full clips wrap the reference-timer clock. */
@@ -154,8 +153,8 @@ static void send_frame(chanend c_image, const mpeg_frame_t *frame,
     unsigned ack;
     pipeline_receive(c_image, &ack, 1);
     unsigned acknowledged = get_reference_time();
-    *send_us += (sent - start) / 100;
-    *ack_wait_us += (acknowledged - sent) / 100;
+    *send_us += reference_ticks_to_us(sent - start);
+    *ack_wait_us += reference_ticks_to_us(acknowledged - sent);
     if (ack != frame->number) __builtin_trap();
 }
 
@@ -200,7 +199,7 @@ static mpeg_result_t take_input(chanend c_load, input_t *in)
          * release ownership before receiving its next chunk. */
         release_input(c_load, in);
         pipeline_receive(c_load, ready, 3);
-        in->wait_us += (get_reference_time() - start) / 100;
+        in->wait_us += reference_ticks_to_us(get_reference_time() - start);
         if (ready[0] == PIPELINE_STOP) {
             in->stopped = 1;
             if (ready[1]) return MPEG_ERROR;
@@ -225,7 +224,7 @@ static mpeg_result_t take_input(chanend c_load, input_t *in)
     mpeg_result_t result = mpeg_feed(in->chunk, count, 0);
     unsigned used = mpeg_input_capacity() - mpeg_input_space();
     if (used > in->input_high_water) in->input_high_water = used;
-    in->feed_us += (get_reference_time() - start) / 100;
+    in->feed_us += reference_ticks_to_us(get_reference_time() - start);
     in->chunk += count;
     in->remaining -= count;
     return result;
@@ -241,7 +240,7 @@ static mpeg_result_t hold_picture(chanend c_load, input_t *in, unsigned pictures
 {
     if (!rate_num) return MPEG_NEED_INPUT;
     /* All in ticks modulo 2^32; differences are good to about 21 seconds. */
-    unsigned picture = (unsigned)((unsigned long long)pictures * 100000000ull * rate_den / rate_num);
+    unsigned picture = (unsigned)((unsigned long long)pictures * REFERENCE_TICKS_PER_SECOND * rate_den / rate_num);
     unsigned first = 1;
     for (;;) {
         int early;
@@ -253,22 +252,22 @@ static mpeg_result_t hold_picture(chanend c_load, input_t *in, unsigned pictures
         }
         if (clock == MPEG_CLOCK_VALID) {
             unsigned played = get_reference_time() - audio_clock_offset;
-            early = (int)(picture - DISPLAY_LATENCY_TICKS - played);
+            early = (int)(picture - display_latency_ticks - played);
             in->clock_seen = 1;
         } else {
             /* The audio starts when the first picture is handed over, so that
              * picture goes at once and the next ones wait for the clock. A
              * clock that stops, or never starts, does not hold the video. */
             if (!pictures || in->clock_seen || in->clock_given_up) return MPEG_NEED_INPUT;
-            if (get_reference_time() - in->first_shown > CLOCK_WAIT_TICKS) {
+            if (get_reference_time() - in->first_shown > clock_start_timeout_ticks) {
                 in->clock_given_up = 1;
                 return MPEG_NEED_INPUT;
             }
-            early = PACE_POLL_TICKS;
+            early = (int)pace_poll_ticks;
             first = 0;
         }
         if (early <= 0) {
-            if (first && -early > 10 * TICKS_PER_MS) {
+            if (first && (unsigned)-early > late_picture_ticks) {
                 ++in->late_pictures;
                 if ((unsigned)-early > in->latest_ticks) in->latest_ticks = (unsigned)-early;
             }
@@ -289,7 +288,7 @@ static mpeg_result_t hold_picture(chanend c_load, input_t *in, unsigned pictures
              * up delivering audio, and the picture must not wait for it. */
             release_input(c_load, in);
         }
-        unsigned wait = (unsigned)early < PACE_POLL_TICKS ? (unsigned)early : PACE_POLL_TICKS;
+        unsigned wait = (unsigned)early < pace_poll_ticks ? (unsigned)early : pace_poll_ticks;
         hwtimer_set_trigger_time(in->timer, get_reference_time() + wait);
         mpeg_result_t result = MPEG_NEED_INPUT;
         SELECT_RES(CASE_GUARD_THEN(c_load, take, on_chunk), CASE_THEN(in->timer, on_time))
@@ -332,12 +331,12 @@ void mpeg_pipeline_decode(chanend c_load, chanend c_image)
             result = mpeg_next(&frame);
 #if APP_XUH_MSC_PLAYER_FRAME_TIMING
             unsigned decode_ticks = get_reference_time() - start;
-            decode_us += decode_ticks / 100;
+            decode_us += reference_ticks_to_us(decode_ticks);
             /* A frame may require several next/feed cycles. Sum decode work,
              * not just the final next() call, excluding input/feed/handoff. */
             frame_decode_ticks += decode_ticks;
 #else
-            decode_us += (get_reference_time() - start) / 100;
+            decode_us += reference_ticks_to_us(get_reference_time() - start);
 #endif
             activity_led_decode(result < 0 ? ACTIVITY_LED_ERROR : 0);
             if (result == MPEG_FRAME) {
@@ -367,14 +366,14 @@ void mpeg_pipeline_decode(chanend c_load, chanend c_image)
                     first_picture = 1;
                 }
                 send_frame(c_image, &frame, &send_us, &ack_wait_us);
-                transfer_us += (get_reference_time() - start) / 100;
+                transfer_us += reference_ticks_to_us(get_reference_time() - start);
 #if APP_XUH_MSC_PLAYER_FRAME_TIMING
                 unsigned acknowledged = get_reference_time();
-                frame_timing_add(&decode_timing, frame_decode_ticks / 100);
+                frame_timing_add(&decode_timing, reference_ticks_to_us(frame_decode_ticks));
                 frame_decode_ticks = 0;
                 /* Service period includes input/feed/decode/handoff and LCD
                  * backpressure. Exclude startup; this is not an LCD timestamp. */
-                if (decoded) frame_timing_add(&service_timing, (acknowledged - previous_ack) / 100);
+                if (decoded) frame_timing_add(&service_timing, reference_ticks_to_us(acknowledged - previous_ack));
                 previous_ack = acknowledged;
 #endif
                 ++decoded;
@@ -418,7 +417,7 @@ void mpeg_pipeline_decode(chanend c_load, chanend c_image)
             ++stats[PIPELINE_ERRORS];
         if (MPEG_PACED && decoded)
             printf("Video paced to audio: %u started over 10 ms late, worst %u ms\n",
-                   in.late_pictures, in.latest_ticks / TICKS_PER_MS);
+                   in.late_pictures, reference_ticks_to_ms(in.latest_ticks));
         stats[PIPELINE_ERRORS] += in.protocol_errors;
         if (stats[PIPELINE_ERRORS]) activity_led_decode(ACTIVITY_LED_ERROR);
         stats[PIPELINE_DECODE_TICKS] = decode_us;
@@ -442,7 +441,7 @@ static void record_render(unsigned stats[], unsigned ack[], unsigned expected)
 {
     if (ack[0] != expected) ++stats[PIPELINE_ERRORS];
     stats[PIPELINE_ERRORS] += ack[2];
-    stats[PIPELINE_RENDER_TICKS] += ack[1] / 100;
+    stats[PIPELINE_RENDER_TICKS] += reference_ticks_to_us(ack[1]);
     ++stats[PIPELINE_FRAMES];
     unsigned now = get_reference_time();
     if (stats[PIPELINE_FRAMES] == 1) stats[PIPELINE_FIRST_COMPLETE] = now;
@@ -514,8 +513,8 @@ static void receive_play(chanend c_image, chanend c_render)
         /* Convert units once per frame, not per strip, to avoid accumulating
          * fractional-microsecond truncation over 120 strips. Header/END,
          * overlay work and renderer/ack waits are outside these two totals. */
-        stats[PIPELINE_RECEIVE_TICKS] += receive_ticks / 100;
-        stats[PIPELINE_CONVERT_TICKS] += convert_ticks / 100;
+        stats[PIPELINE_RECEIVE_TICKS] += reference_ticks_to_us(receive_ticks);
+        stats[PIPELINE_CONVERT_TICKS] += reference_ticks_to_us(convert_ticks);
 #if APP_XUH_MSC_PLAYER_FPS_OVERLAY
         fps.target_tenths = (rate_num * 10 + rate_den / 2) / rate_den;
         fps_overlay_frame(&fps, get_reference_time(), lcd_frames[slot]);
@@ -534,7 +533,7 @@ static void receive_play(chanend c_image, chanend c_render)
         if (pending) {
             unsigned start = get_reference_time();
             pipeline_receive(c_render, ack, 3);
-            stats[PIPELINE_RENDER_WAIT_TICKS] += (get_reference_time() - start) / 100;
+            stats[PIPELINE_RENDER_WAIT_TICKS] += reference_ticks_to_us(get_reference_time() - start);
             record_render(stats, ack, sequence - 1);
         }
         unsigned ready[2] = {slot, sequence};

@@ -1,6 +1,7 @@
 #ifndef APP_AUDIO_PLAYBACK_H_
 #define APP_AUDIO_PLAYBACK_H_
 #include <stdint.h>
+#include "reference_time.h"
 
 /* Output-clock accounting, independent of MP2 parsing and hardware resources.
  * Call advance at least once per reference-timer wrap. The stand-in task uses
@@ -12,7 +13,7 @@ typedef struct {
     unsigned underflows, held, dropped, gap;
 } audio_playback_t;
 
-enum { AUDIO_REFERENCE_HZ = 100000000u };
+enum { AUDIO_REFERENCE_HZ = REFERENCE_TICKS_PER_SECOND };
 
 static inline void audio_playback_advance(audio_playback_t *p, unsigned now)
 {

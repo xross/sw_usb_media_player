@@ -1,5 +1,6 @@
 #ifndef VIDEO_CONFIG_H_
 #define VIDEO_CONFIG_H_
+#include "reference_time.h"
 
 /* Portable display geometry and pipeline selection; no XCORE resource types. */
 #ifndef APP_XUH_MSC_PLAYER_ENABLE_MPEG1
@@ -13,7 +14,7 @@
 #define MSC_VIDEO_PIPELINE (MSC_JPEG_PIPELINE || MSC_MPEG_PIPELINE)
 #define PIPELINE_LCD_WIDTH 320
 #define PIPELINE_LCD_HEIGHT 240
-#define PIPELINE_TICKS_PER_SECOND 100000000u
+#define PIPELINE_TICKS_PER_SECOND REFERENCE_TICKS_PER_SECOND
 
 /* Player settings. Change them here, not in CMake.
  *

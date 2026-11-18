@@ -12,7 +12,7 @@
 /* Decoder tile: double-buffered compressed input, single full-screen RGB output.
  * Only the loader writes input, only the decoder writes RGB.
  * Slot ownership is transferred by the ready/free channel messages. */
-static unsigned char jpeg_input[2][PIPELINE_INPUT_BYTES] __attribute__((aligned(4)));
+static unsigned char jpeg_input[2][JPEG_MAX_FRAME_BYTES] __attribute__((aligned(4)));
 static unsigned char jpeg_rgb[PIPELINE_RGB_BYTES] __attribute__((aligned(4)));
 static unsigned char jpeg_work[JPEG_DECODE_WORK_SIZE] __attribute__((aligned(4)));
 
@@ -57,7 +57,7 @@ static void decode_play(chanend c_load, chanend c_output)
         pipeline_receive(c_load, ready, 3);
         if (ready[0] == PIPELINE_STOP) break;
         unsigned slot = ready[0], sequence = ready[1], size = ready[2];
-        if (sequence != expected || slot != (sequence & 1) || size > PIPELINE_INPUT_BYTES)
+        if (sequence != expected || slot != (sequence & 1) || size > JPEG_MAX_FRAME_BYTES)
             ++errors;
         ++expected;
 
@@ -76,7 +76,7 @@ static void decode_play(chanend c_load, chanend c_output)
         jpeg_decode_result_t result = jpeg_decode(
             jpeg_input[slot], size, jpeg_rgb, sizeof(jpeg_rgb),
             jpeg_work, sizeof(jpeg_work), JPEG_DECODE_SCALE, &info);
-        decode_ticks += (get_reference_time() - start) / 100;
+        decode_ticks += reference_ticks_to_us(get_reference_time() - start);
         activity_led_decode(result == JPEG_DECODE_OK && info.channels == 3 ?
                             ACTIVITY_LED_FRAME : ACTIVITY_LED_ERROR);
         if (result == JPEG_DECODE_OK && info.channels == 3) {
@@ -148,7 +148,7 @@ static void transmit_play(chanend c_decode, chanend c_image)
         pipeline_receive(c_image, ack, 1);
         if (ack[0] != sequence) ++errors;
         if (sequence == 0) first_complete = get_reference_time();
-        ticks += (get_reference_time() - start) / 100;
+        ticks += reference_ticks_to_us(get_reference_time() - start);
         /* Receiver no longer reads RGB; decoder can reclaim this slot. */
         pipeline_send(c_decode, ack, 1);
     }
@@ -197,7 +197,7 @@ static void receive_play(chanend c_image, chanend c_render)
             }
         }
         chanend_check_control_token(c_image, XS1_CT_END);
-        stats[PIPELINE_CONVERT_TICKS] += (get_reference_time() - start) / 100;
+        stats[PIPELINE_CONVERT_TICKS] += reference_ticks_to_us(get_reference_time() - start);
 #if APP_XUH_MSC_PLAYER_FPS_OVERLAY
         fps_overlay_frame(&fps, get_reference_time(), lcd_frames[slot]);
 #endif
@@ -209,7 +209,7 @@ static void receive_play(chanend c_image, chanend c_render)
             pipeline_receive(c_render, ack, 3);
             if (ack[0] != sequence - 1) ++stats[PIPELINE_ERRORS];
             stats[PIPELINE_ERRORS] += ack[2];
-            stats[PIPELINE_RENDER_TICKS] += ack[1] / 100;
+            stats[PIPELINE_RENDER_TICKS] += reference_ticks_to_us(ack[1]);
             ++stats[PIPELINE_FRAMES];
         }
         unsigned ready[2] = {slot, sequence};
@@ -221,7 +221,7 @@ static void receive_play(chanend c_image, chanend c_render)
             pipeline_receive(c_render, ack, 3);
             if (ack[0] != sequence) ++stats[PIPELINE_ERRORS];
             stats[PIPELINE_ERRORS] += ack[2];
-            stats[PIPELINE_RENDER_TICKS] += ack[1] / 100;
+            stats[PIPELINE_RENDER_TICKS] += reference_ticks_to_us(ack[1]);
             ++stats[PIPELINE_FRAMES];
             pending = 0;
         }
@@ -231,7 +231,7 @@ static void receive_play(chanend c_image, chanend c_render)
         pipeline_receive(c_render, ack, 3);
         if (ack[0] != expected - 1) ++stats[PIPELINE_ERRORS];
         stats[PIPELINE_ERRORS] += ack[2];
-        stats[PIPELINE_RENDER_TICKS] += ack[1] / 100;
+        stats[PIPELINE_RENDER_TICKS] += reference_ticks_to_us(ack[1]);
         ++stats[PIPELINE_FRAMES];
     }
     unsigned stop[2] = {PIPELINE_STOP, 0};

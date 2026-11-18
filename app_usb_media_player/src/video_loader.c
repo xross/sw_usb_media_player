@@ -18,7 +18,7 @@ void video_loader_play(chanend c_load, const video_source_t *source, video_play_
         unsigned slot = play->units & 1, bytes = 0;
         unsigned load_start = get_reference_time();
         int result = source->read(source->context, source->buffer(slot), source->capacity, &bytes);
-        play->load_us += (get_reference_time() - load_start) / 100;
+        play->load_us += reference_ticks_to_us(get_reference_time() - load_start);
 
         /* While the alternate buffer was being filled, the decoder consumed
          * the previous unit. It must release ownership before publication. */
@@ -62,13 +62,13 @@ void video_loader_report(unsigned number, const video_play_t *play)
 {
     const unsigned *stats = play->stats;
     unsigned frames = stats[PIPELINE_FRAMES];
-    unsigned long long elapsed_ms = play->elapsed_ticks / 100000;
+    unsigned long long elapsed_ms = play->elapsed_ticks / REFERENCE_TICKS_PER_MS;
     unsigned fps = play->elapsed_ticks ? (unsigned)((unsigned long long)frames *
                    PIPELINE_TICKS_PER_SECOND * 100 / play->elapsed_ticks) : 0;
     printf("Play %u complete: %u frames in %llu.%03u seconds: %u.%02u FPS\n",
            number, frames, elapsed_ms / 1000, (unsigned)(elapsed_ms % 1000), fps / 100, fps % 100);
     printf("Startup to first displayed frame: %u us\n",
-           (stats[PIPELINE_FIRST_COMPLETE] - play->start) / 100);
+           reference_ticks_to_us(stats[PIPELINE_FIRST_COMPLETE] - play->start));
     printf("Average stage times (us per frame; overlapping stages are not additive):\n");
     printf("  %-24s %-9s %s\n", "Stage", "Tile", "us/frame");
     printf("  %-24s %-9s %u\n", "Load", "0", (unsigned)(play->load_us / frames));

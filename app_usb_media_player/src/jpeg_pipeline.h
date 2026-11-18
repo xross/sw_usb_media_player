@@ -2,7 +2,9 @@
 #define JPEG_PIPELINE_H_
 
 #include "pipeline.h"
-#define PIPELINE_INPUT_BYTES (512 * 60)
+/* Maximum compressed JPEG frame, not a USB sector/transfer size. This remains
+ * a compile-time bound for the two static read-ahead buffers. */
+enum { JPEG_MAX_FRAME_BYTES = 30 * 1024 };
 #define JPEG_INPUT_WIDTH 320
 #define JPEG_INPUT_HEIGHT 240
 #define JPEG_DECODE_SCALE 0

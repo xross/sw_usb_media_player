@@ -72,6 +72,12 @@ static void long_gap(void)
 
 int main(void)
 {
+    /* Unit conversions retain truncation and unsigned timestamp wrapping. */
+    assert(reference_ticks_from_ms(25) == 2500000u);
+    assert(reference_ticks_from_us(250) == 25000u);
+    assert(reference_ticks_to_us(199) == 1);
+    assert(reference_ticks_to_ms(199999) == 1);
+    assert(reference_ticks_from_ms(42950) == (unsigned)4295000000ull);
     continuous();
     starvation();
     long_gap();

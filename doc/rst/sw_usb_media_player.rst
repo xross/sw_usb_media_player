@@ -731,6 +731,11 @@ demo's button sampling/debounce and fast-forward decimation live in
 ``src/pacing_button.c`` and ``src/audio_fast_forward.c``; the MP2 task retains
 the playback and DAC-restart policy.
 
+Reference-clock units and timestamp conversions are shared in
+``src/reference_time.h``. Ordinary timing and smoothing constants have
+local names rather than application configuration switches. Compile-time
+packet/array bounds retain enums where C requires constant expressions.
+
 The finite ``tests/app_audio_pipeline`` fixture runs the actual MP2 channel task
 on tile 1 with a tile-0 producer, as in the player. Its default stand-in build
 has ten cases covering partial-word and multi-chunk sends, deterministic replay,

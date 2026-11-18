@@ -18,7 +18,7 @@ static unsigned char audio_memory[MPEG_AUDIO_MEMORY_SIZE] __attribute__((aligned
 
 /* A held start goes ahead this long after its go: the time the picture that
  * prompted the go takes to appear. */
-enum { START_LATENCY_TICKS = APP_XUH_MSC_PLAYER_DISPLAY_LATENCY_MS * (AUDIO_REFERENCE_HZ / 1000) };
+static const unsigned start_latency_ticks = APP_XUH_MSC_PLAYER_DISPLAY_LATENCY_MS * REFERENCE_TICKS_PER_MS;
 
 /* Sender's tile: the audio clock as of the newest acknowledgement. Between a
  * go and the first acknowledgement that confirms the start, the clock is the
@@ -28,7 +28,7 @@ static unsigned clock_offset, clock_valid, go_expected, go_time;
 int audio_pipeline_clock(unsigned *offset)
 {
     if (clock_valid == AUDIO_CLOCK_NONE && go_expected) {
-        *offset = go_time + START_LATENCY_TICKS;
+        *offset = go_time + start_latency_ticks;
         return AUDIO_CLOCK_RUNNING;
     }
     *offset = clock_offset;
@@ -130,13 +130,13 @@ static struct { unsigned held, go, go_time; } start_gate;
 static unsigned start_due(unsigned now, unsigned stopping)
 {
     if (stopping || !waiting_room()) return 1;
-    return start_gate.go && (int)(now - (start_gate.go_time + START_LATENCY_TICKS)) >= 0;
+    return start_gate.go && (int)(now - (start_gate.go_time + start_latency_ticks)) >= 0;
 }
 
 /* The task's next wake-up, brought forward to a held start that has its go. */
 static unsigned start_wake(unsigned wake)
 {
-    unsigned due = start_gate.go_time + START_LATENCY_TICKS;
+    unsigned due = start_gate.go_time + start_latency_ticks;
     return start_gate.held && start_gate.go && (int)(due - wake) < 0 ? due : wake;
 }
 
@@ -235,7 +235,7 @@ static mpeg_result_t decode_block(mpeg_audio_frame_t *frame, unsigned stats[AUDI
 {
     unsigned start = get_reference_time();
     mpeg_result_t next = mpeg_audio_next(frame);
-    stats[AUDIO_DECODE_US] += (get_reference_time() - start) / 100;
+    stats[AUDIO_DECODE_US] += reference_ticks_to_us(get_reference_time() - start);
     return next;
 }
 
@@ -332,7 +332,7 @@ static void end_play(chanend channel, unsigned decode, unsigned stats[AUDIO_STAT
 #error Physical I2S output requires paced S32 decoding
 #endif
 
-enum { DAC_POLL_TICKS = AUDIO_REFERENCE_HZ / 200 };
+static const unsigned dac_poll_ticks = 5 * REFERENCE_TICKS_PER_MS;
 
 /* The DAC queue restarts when pacing is switched back on. Its counts start
  * again from zero, so the play's earlier counts are carried here: the stream
@@ -508,7 +508,7 @@ void mp2_audio_task(chanend channel)
             if (stopping && (!active || (need_input && !remaining && !waiting_count()))) break;
             unsigned accept = !active || waiting_room();
             unsigned timed = active && (remaining || status[DAC_STARTED] || start_gate.held);
-            unsigned wake = start_wake(get_reference_time() + DAC_POLL_TICKS);
+            unsigned wake = start_wake(get_reference_time() + dac_poll_ticks);
 #if APP_XUH_MSC_PLAYER_PACING_BUTTON
             timed |= active && button.pending;
             wake = pacing_button_wake(&button, wake);
@@ -572,6 +572,7 @@ void mp2_audio_task(chanend channel)
  * state, omit their obsolete prefix, and hold the last emitted pair for gaps.
  * A gap is confirmed when later media arrives: an unconfirmed tail at EOF is
  * not an underflow. STOP drains the final buffered audio at the normal rate. */
+static const unsigned standin_poll_ticks = 10 * REFERENCE_TICKS_PER_MS;
 #pragma stackfunction 1024
 void mp2_audio_task(chanend channel)
 {
@@ -677,7 +678,7 @@ void mp2_audio_task(chanend channel)
             unsigned accept = !active || waiting_room();
             unsigned timed = active && (playback.started || start_gate.held);
             if (timed) hwtimer_set_trigger_time(timer,
-                playing ? due : start_wake(get_reference_time() + AUDIO_REFERENCE_HZ / 100));
+                playing ? due : start_wake(get_reference_time() + standin_poll_ticks));
             /* Service a ready deadline before another compressed input chunk. */
             SELECT_RES_ORDERED(CASE_GUARD_THEN(timer, timed, on_due),
                                CASE_GUARD_THEN(channel, accept && !stopping, on_message))

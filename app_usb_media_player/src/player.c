@@ -48,7 +48,7 @@ static int play_mjpeg(chanend c_load, unsigned number)
 {
     static const video_source_t source = {
         "VIDEO.MJP", NULL, mjpeg_source_open, mjpeg_source_read, mjpeg_source_close,
-        jpeg_pipeline_input_buffer, PIPELINE_INPUT_BYTES };
+        jpeg_pipeline_input_buffer, JPEG_MAX_FRAME_BYTES };
     static video_play_t play;
     printf("Play %u: raw MJPEG at full speed, 320x240 landscape...\n", number);
     video_loader_play(c_load, &source, &play);
@@ -111,7 +111,7 @@ static void publish_audio_timing(void)
     if (clock == AUDIO_CLOCK_UNPACED)
         mpeg_pipeline_audio_clock(0, MPEG_CLOCK_UNPACED);
     else if (have_start && clock == AUDIO_CLOCK_RUNNING)
-        mpeg_pipeline_audio_clock(offset - (unsigned)audio_start_ms * 100000u, MPEG_CLOCK_VALID);
+        mpeg_pipeline_audio_clock(offset - reference_ticks_from_ms((unsigned)audio_start_ms), MPEG_CLOCK_VALID);
     else
         mpeg_pipeline_audio_clock(0, MPEG_CLOCK_NONE);
 }

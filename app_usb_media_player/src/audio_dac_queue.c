@@ -2,8 +2,9 @@
 #if APP_XUH_MSC_PLAYER_AUDIO_DAC
 #include <xcore/hwtimer.h>
 #include "audio_pcm.h"
+#include "reference_time.h"
 
-enum { POLL_TICKS = 25000 };
+static const unsigned poll_interval_us = 250;
 
 static audio_pcm_t pcm;
 static volatile unsigned reset_request, reset_ack, reset_hold;
@@ -25,7 +26,7 @@ static void wait_for(volatile unsigned *word, unsigned value)
 {
     hwtimer_t timer = hwtimer_alloc();
     if (!timer) __builtin_trap();
-    while (*word != value) hwtimer_delay(timer, POLL_TICKS);
+    while (*word != value) hwtimer_delay(timer, reference_ticks_from_us(poll_interval_us));
     hwtimer_free(timer);
     __asm__ volatile("" ::: "memory");
 }
