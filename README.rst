@@ -5,8 +5,9 @@ sw_usb_media_player: USB Media Player
 #####################################
 
 :vendor: xross
-:description: USB mass-storage video and audio player for xcore.ai
+:version: 0.1.0
 :scope: Demo
+:description: USB mass-storage video and audio player for xcore.ai
 :category: General purpose
 :keywords: USB, mass storage, MPEG-1, MJPEG, MP2, LCD, I2S
 :hardware: XK-EVK-XU316
