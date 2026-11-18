@@ -726,6 +726,11 @@ DAC dependency. Configure its fixed cache using ``MPEG_PS_CACHE_BYTES`` in the
 application's ``src/mpeg_conf.h``; codec options use the same header. The player
 only supplies the file and audio-delivery callbacks.
 
+Shared pipeline messages/statistics are declared in ``src/pipeline.h``. The
+demo's button sampling/debounce and fast-forward decimation live in
+``src/pacing_button.c`` and ``src/audio_fast_forward.c``; the MP2 task retains
+the playback and DAC-restart policy.
+
 The finite ``tests/app_audio_pipeline`` fixture runs the actual MP2 channel task
 on tile 1 with a tile-0 producer, as in the player. Its default stand-in build
 has ten cases covering partial-word and multi-chunk sends, deterministic replay,

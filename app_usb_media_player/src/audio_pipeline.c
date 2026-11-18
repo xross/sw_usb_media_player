@@ -4,12 +4,14 @@
 #include <xcore/hwtimer.h>
 #include <xcore/port.h>
 #include <xcore/select.h>
-#include "jpeg_pipeline.h"
+#include "pipeline.h"
 #include "mpeg_audio.h"
 #include "audio_meter.h"
 #include "decode_lead.h"
 #include "audio_playback.h"
 #include "audio_dac_queue.h"
+#include "audio_fast_forward.h"
+#include "pacing_button.h"
 
 /* The MP2 decoder is lib_mpeg's; this task owns its memory. */
 static unsigned char audio_memory[MPEG_AUDIO_MEMORY_SIZE] __attribute__((aligned(8)));
@@ -330,8 +332,7 @@ static void end_play(chanend channel, unsigned decode, unsigned stats[AUDIO_STAT
 #error Physical I2S output requires paced S32 decoding
 #endif
 
-enum { DAC_POLL_TICKS = AUDIO_REFERENCE_HZ / 200,
-       BUTTON_SETTLE_TICKS = AUDIO_REFERENCE_HZ / 20 };
+enum { DAC_POLL_TICKS = AUDIO_REFERENCE_HZ / 200 };
 
 /* The DAC queue restarts when pacing is switched back on. Its counts start
  * again from zero, so the play's earlier counts are carried here: the stream
@@ -356,60 +357,12 @@ static void dac_progress(unsigned status[DAC_STATUS_WORDS], unsigned stats[AUDIO
 }
 
 /* Pacing can be switched off at run time. The video decoder then runs flat out
- * and the audio arrives faster than it plays, so it is played faster: frames
- * are dropped evenly, keeping one in every dac_step / 65536, which raises the
- * pitch. dac_step is the rate the audio has been arriving at, measured over
- * STEP_WINDOW_TICKS and smoothed; the arrival is too bursty to follow block by
- * block. A block still part-played when the input is full is cut short.
+ * and audio_fast_forward plays the audio faster to follow its arrival rate.
+ * A block still part-played when the input is full is cut short.
  * Underflows are not counted while unpaced. Switched on again, the DAC
  * restarts with the next decoded block, and the video waits for it. */
 static unsigned dac_paced = 1;
-enum { STEP_ONE = 65536, STEP_START = STEP_ONE * 3 / 2, STEP_MAX = STEP_ONE * 4,
-       STEP_WINDOW_TICKS = AUDIO_REFERENCE_HZ / 4 };
-/* The window: when it started and the audio decoded by then, in frames. */
-static unsigned dac_step, dac_window_start, dac_window_frames;
-
-/* Unpaced, after each decoded block: measure the arrival rate once a window
- * has passed, as a multiple of the DAC's rate, and move dac_step towards it. */
-static void dac_follow_arrival(unsigned decoded_frames)
-{
-    unsigned elapsed = get_reference_time() - dac_window_start;
-    if (elapsed < STEP_WINDOW_TICKS) return;
-    unsigned long long played = (unsigned long long)elapsed * AUDIO_DAC_RATE / AUDIO_REFERENCE_HZ;
-    /* Aim about 6% slow, so that the queue tends to fill, cutting a block short
-     * now and then, rather than run dry and go silent. */
-    unsigned long long rate = (unsigned long long)(decoded_frames - dac_window_frames) * STEP_ONE * 15 / 16 / played;
-    if (rate < STEP_ONE) rate = STEP_ONE;
-    if (rate > STEP_MAX) rate = STEP_MAX;
-    dac_step = (3 * dac_step + (unsigned)rate) / 4;
-    dac_window_start += elapsed;
-    dac_window_frames = decoded_frames;
-}
-
-/* Unpaced: write a block, from *position (in 1/65536 frames), keeping one
- * frame in every dac_step / 65536. Returns the frames of the block still to
- * play from, 0 when it is done. */
-static unsigned dac_write_faster(const mpeg_audio_sample_t *block, unsigned *position)
-{
-    enum { CHUNK = 32 };
-    int32_t chunk[2 * CHUNK];
-    for (;;) {
-        unsigned at = *position, count = 0;
-        while (count < CHUNK && (at >> 16) < MPEG_AUDIO_FRAME_SAMPLES) {
-            chunk[2 * count] = block[2 * (at >> 16)];
-            chunk[2 * count + 1] = block[2 * (at >> 16) + 1];
-            ++count;
-            at += dac_step;
-        }
-        if (!count) return 0;
-        /* Not kept to the clock: after a gap, play on rather than drop. */
-        unsigned taken = audio_dac_write_now(chunk, count);
-        *position += taken * dac_step;
-        if (taken < count) break;
-    }
-    unsigned frame = *position >> 16;
-    return frame < MPEG_AUDIO_FRAME_SAMPLES ? MPEG_AUDIO_FRAME_SAMPLES - frame : 0;
-}
+static audio_fast_forward_t fast_forward;
 
 static void dac_set_paced(unsigned paced, unsigned stats[AUDIO_STATS_WORDS])
 {
@@ -429,9 +382,7 @@ static void dac_set_paced(unsigned paced, unsigned stats[AUDIO_STATS_WORDS])
     start_gate.go = 0;
     audio_dac_reset(paced);
     dac_paced = paced;
-    dac_step = STEP_START;
-    dac_window_start = get_reference_time();
-    dac_window_frames = stats[AUDIO_SAMPLES];
+    audio_fast_forward_reset(&fast_forward, get_reference_time(), stats[AUDIO_SAMPLES]);
 #if DECODE_LEAD_ENABLED
     decode_lead_pacing_publish(paced);
     /* Unpaced, the position is published as each block is decoded. */
@@ -440,51 +391,15 @@ static void dac_set_paced(unsigned paced, unsigned stats[AUDIO_STATS_WORDS])
 }
 
 #if APP_XUH_MSC_PLAYER_PACING_BUTTON
-/* SW1: pacing is off while it is held, held being the opposite of the level
- * read at startup. A change within BUTTON_SETTLE_TICKS of the last one acted on
- * may be bounce: it is acted on once that time has passed. The reference timer
- * wraps every 43 s, so only the time since that switch is compared. */
-static struct { port_t port; unsigned idle, switched, pending; } button;
+static pacing_button_t button;
 
-static void button_init(void)
-{
-    button.port = XS1_PORT_1H;
-    port_enable(button.port);
-    button.idle = port_peek(button.port) & 1;
-    button.switched = get_reference_time() - BUTTON_SETTLE_TICKS;
-    button.pending = 0;
-    port_set_trigger_in_not_equal(button.port, button.idle);
-}
-
-/* Whether the button asks for pacing: it is not held. */
-static unsigned button_paced(void)
-{
-    return (port_peek(button.port) & 1) == button.idle;
-}
-
-/* The button has changed (or a deferred change is due): follow it, unless the
- * last change acted on was too recent, in which case look again later.
- * Returns whether pacing was switched. */
+/* Keep the DAC restart policy here; GPIO/debounce lives in pacing_button. */
 static unsigned button_follow(unsigned active, unsigned stats[AUDIO_STATS_WORDS])
 {
-    unsigned now = get_reference_time();
-    if (now - button.switched < BUTTON_SETTLE_TICKS) {
-        button.pending = 1;
-        return 0;
-    }
-    button.pending = 0;
-    unsigned paced = button_paced();
-    if (!active || paced == dac_paced) return 0;
-    dac_set_paced(paced, stats);
-    button.switched = now;
+    int paced = pacing_button_change(&button, active, dac_paced);
+    if (paced < 0) return 0;
+    dac_set_paced((unsigned)paced, stats);
     return 1;
-}
-
-/* The task's next wake-up, brought forward to a deferred button change. */
-static unsigned button_wake(unsigned wake)
-{
-    unsigned settled = button.switched + BUTTON_SETTLE_TICKS;
-    return button.pending && (int)(settled - wake) < 0 ? settled : wake;
 }
 #endif
 
@@ -501,7 +416,7 @@ void mp2_audio_task(chanend channel)
     hwtimer_t timer = hwtimer_alloc();
     if (!timer) __builtin_trap();
 #if APP_XUH_MSC_PLAYER_PACING_BUTTON
-    button_init();
+    pacing_button_init(&button);
 #endif
     for (;;) {
         unsigned stats[AUDIO_STATS_WORDS] = {0};
@@ -517,7 +432,7 @@ void mp2_audio_task(chanend channel)
 #endif
 #if APP_XUH_MSC_PLAYER_PACING_BUTTON
         /* Held at the start of a play: unpaced, so not held for the first picture. */
-        if (!button_paced()) dac_set_paced(0, stats);
+        if (!pacing_button_paced(&button)) dac_set_paced(0, stats);
 #endif
         for (;;) {
             unsigned failed = stats[AUDIO_ERRORS] || strict_failed(stats);
@@ -546,7 +461,7 @@ void mp2_audio_task(chanend channel)
                             continue;
                         }
                         if (!dac_paced) {
-                            dac_follow_arrival(stats[AUDIO_SAMPLES]);
+                            audio_fast_forward_follow(&fast_forward, get_reference_time(), stats[AUDIO_SAMPLES]);
                             position = 0;
                         }
                         block = frame.samples;
@@ -563,7 +478,7 @@ void mp2_audio_task(chanend channel)
                     }
                 }
                 if (remaining && !dac_paced) {
-                    remaining = dac_write_faster(block, &position);
+                    remaining = audio_fast_forward_write(&fast_forward, block, &position);
                 } else if (remaining) {
                     unsigned taken = audio_dac_write(block, remaining);
                     block += 2 * taken;
@@ -596,7 +511,7 @@ void mp2_audio_task(chanend channel)
             unsigned wake = start_wake(get_reference_time() + DAC_POLL_TICKS);
 #if APP_XUH_MSC_PLAYER_PACING_BUTTON
             timed |= active && button.pending;
-            wake = button_wake(wake);
+            wake = pacing_button_wake(&button, wake);
 #endif
             if (timed) hwtimer_set_trigger_time(timer, wake);
 #if APP_XUH_MSC_PLAYER_PACING_BUTTON

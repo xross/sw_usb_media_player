@@ -3,7 +3,7 @@
 #include <xcore/select.h>
 #include "dac_fixture.h"
 #include "decode_lead.h"
-#include "jpeg_pipeline.h"
+#include "pipeline.h"
 
 /* Replace only the I2S/PLL adapter, not the queue or its reset/EOF mailbox.
  * One call per stereo sample period, on the same tile as the real MP2 task.

@@ -4,7 +4,7 @@
 #include <xcore/hwtimer.h>
 #include "audio_pipeline.h"
 #include "dac_fixture.h"
-#include "jpeg_pipeline.h"
+#include "pipeline.h"
 #include "mpeg_audio.h"
 
 static unsigned char input[1728];

@@ -20,7 +20,8 @@ if(TEST_AUDIO_DAC)
         message(FATAL_ERROR "TEST_AUDIO_DAC requires TEST_AUDIO_S32")
     endif()
     set(APP_C_SRCS src/dac_test.c src/dac_consumer.c ../../src/audio_pipeline.c
-        ../../src/decode_lead.c ../../src/audio_dac_queue.c ../../src/audio_pcm.c)
+        ../../src/decode_lead.c ../../src/audio_dac_queue.c ../../src/audio_pcm.c
+        ../../src/audio_fast_forward.c ../../src/pacing_button.c)
     list(APPEND APP_COMPILER_FLAGS -DAPP_XUH_MSC_PLAYER_AUDIO_DAC=1)
 endif()
 if(TEST_AUDIO_STRICT)

@@ -1,6 +1,6 @@
 #ifndef VIDEO_LOADER_H_
 #define VIDEO_LOADER_H_
-#include "jpeg_pipeline.h"
+#include "pipeline.h"
 
 #if MSC_VIDEO_PIPELINE && !defined(__XC__)
 /* Storage-independent read-ahead loader shared by the MJPEG and MPEG-1 players.

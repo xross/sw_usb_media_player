@@ -1,6 +1,6 @@
 #ifndef MPEG_PIPELINE_H_
 #define MPEG_PIPELINE_H_
-#include "jpeg_pipeline.h"
+#include "pipeline.h"
 #include "video_window.h"
 #include "decode_lead.h"
 
