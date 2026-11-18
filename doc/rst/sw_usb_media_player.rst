@@ -705,15 +705,14 @@ for headline throughput measurements.
 Validation
 ----------
 
-Application-owned PS-reader, MJPEG-reader, activity-LED, FPS-overlay,
+Application-owned MJPEG-reader, activity-LED, FPS-overlay,
 audio-meter, decode-lead and frame-timing tests run natively, with ASan, UBSan
 and assertions enabled. Decode-lead tests cover fractional media clocks,
 positive/negative offsets, startup/reset validity, rollover, drawing bounds,
 scale/text overflow and the disabled configuration. The
-suite also checks the profile parser and compares demultiplexed video/audio
-bytes against FFmpeg for generated I/P, I/P/B and video-only program streams.
-FFmpeg and a sibling ``lib_fatfs`` checkout (including its FatFs submodule) are
-required; set ``FATFS_ROOT`` if that checkout is elsewhere::
+suite also checks the profile and playback-report parsers. A sibling
+``lib_fatfs`` checkout (including its FatFs submodule) is required;
+set ``FATFS_ROOT`` if that checkout is elsewhere::
 
     python3 -m venv .venv
     source .venv/bin/activate
@@ -721,15 +720,11 @@ required; set ``FATFS_ROOT`` if that checkout is elsewhere::
     cmake --build build-app-native-tests -j 8
     ctest --test-dir build-app-native-tests --output-on-failure
 
-To include a local full program stream in the byte-identity check::
-
-    python app_usb_media_player/tests/test_ps_demux.py \
-      --demux build-app-native-tests/mpeg_ps_demux \
-      --work build-app-native-tests/ps-full \
-      --full media/VIDEO.MPG
-
-The demux checks belong to this application
-and do not build or depend on the MPEG decoder.
+The PS reader, with its boundary/timestamp and FFmpeg byte-identity checks, is
+part of ``lib_mpeg``; see that library's guide. It has no FatFs, USB, LCD or
+DAC dependency. Configure its fixed cache using ``MPEG_PS_CACHE_BYTES`` in the
+application's ``src/mpeg_conf.h``; codec options use the same header. The player
+only supplies the file and audio-delivery callbacks.
 
 The finite ``tests/app_audio_pipeline`` fixture runs the actual MP2 channel task
 on tile 1 with a tile-0 producer, as in the player. Its default stand-in build

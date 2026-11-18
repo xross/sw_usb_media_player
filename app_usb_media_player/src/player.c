@@ -83,7 +83,7 @@ static unsigned audio_stats[AUDIO_STATS_WORDS];
 #define APP_XUH_MSC_PLAYER_MPEG_FILE "VIDEO_320x180.MPG"
 #endif
 
-PS_READ_CALLBACK static int mpeg_ps_disk_read(void *context, unsigned char *data,
+MPEG_PS_READ_CALLBACK static int mpeg_ps_disk_read(void *context, unsigned char *data,
                                             unsigned capacity, unsigned *bytes)
 {
     UINT count = 0;
@@ -116,7 +116,7 @@ static void publish_audio_timing(void)
         mpeg_pipeline_audio_clock(0, MPEG_CLOCK_NONE);
 }
 
-PS_AUDIO_CALLBACK static int mpeg_ps_audio_send(void *context,
+MPEG_PS_AUDIO_CALLBACK static int mpeg_ps_audio_send(void *context,
                                                const unsigned char *data, unsigned bytes)
 {
     int result = audio_pipeline_send(*(chanend *)context, data, bytes);

@@ -8,4 +8,4 @@ set(XUH_SPI_DEPENDENCY "lib_spi(4.0.0)")
 # keeps. lib_xassert is named first so that the player builds against 5.x.
 set(XUH_I2S_DEPENDENCY "lib_xassert(5.0.0)" "lib_i2s(6.0.1)")
 set(XUH_SW_PLL_DEPENDENCY "lib_sw_pll(2.5.0)")
-set(XUH_MPEG_DEPENDENCY "git@github.com:xross/lib_mpeg(7032989b40a2aa969480df5ec539a87fd585f66b)")
+set(XUH_MPEG_DEPENDENCY "git@github.com:xross/lib_mpeg(fcebc45c4c5284fed7e0988c9d2d68fb62c103a7)")
